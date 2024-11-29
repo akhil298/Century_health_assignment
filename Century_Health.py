@@ -98,7 +98,7 @@ def merge_and_insert_data(**kwargs):
         # Retrieve transformed data from XCom
         ti = kwargs['ti']
         patients = ti.xcom_pull(key='patients_cleaned')
-        patients_gender = ti.xcom_pull(key='patients_gender_raw')
+        patients_gender = pd.read_csv(file_paths["patients_gender"], encoding="ISO-8859-1")
         
         # Merge patient data with gender data
         patients = merge_patients_and_gender(patients, patients_gender)
@@ -155,13 +155,14 @@ dag = DAG(
 # Define tasks for reading files
 read_tasks = {}
 for file_key in file_paths.keys():
-    read_tasks[file_key] = PythonOperator(
-        task_id=f'read_{file_key}_file',  # Unique task ID
-        python_callable=read_file,  # Function to execute
-        op_kwargs={'file_key': file_key},  # Pass file key as an argument
-        provide_context=True,  # Enable context passing
-        dag=dag
-    )
+    if file_key != 'patients_gender':
+        read_tasks[file_key] = PythonOperator(
+            task_id=f'read_{file_key}_file',  # Unique task ID
+            python_callable=read_file,  # Function to execute
+            op_kwargs={'file_key': file_key},  # Pass file key as an argument
+            provide_context=True,  # Enable context passing
+            dag=dag
+        )
 
 # Define tasks for transforming data
 transform_tasks = {
@@ -192,7 +193,8 @@ merge_and_insert_task = PythonOperator(
 # Set task dependencies
 # Each file read task is followed by its respective transformation task
 for file_key in file_paths.keys():
-    read_tasks[file_key] >> transform_tasks_operators.get(file_key, [])
+    if file_key in read_tasks and file_key in transform_tasks_operators:  # Ensure task exists
+        read_tasks[file_key] >> transform_tasks_operators[file_key]
 
 # All transformation tasks must complete before merging and inserting
 list(transform_tasks_operators.values()) >> merge_and_insert_task
